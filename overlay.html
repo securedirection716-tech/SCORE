@@ -1,0 +1,90 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Scoreboard Overlay</title>
+<link href="https://fonts.googleapis.com/css2?family=Oswald:wght@500;700&display=swap" rel="stylesheet">
+<style>
+  html, body { margin: 0; padding: 0; background: transparent !important; overflow: hidden; height: 100%; }
+  body { display: flex; align-items: center; justify-content: center; font-family: 'Oswald', 'Impact', 'Arial Narrow', sans-serif; }
+
+  /* Everything scales from the --u unit so it fits any window size */
+  #board { --u: min(1vw, 1.7vh); position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; }
+  .wrap { position: relative; width: calc(var(--u) * 96); height: calc(var(--u) * 30); }
+
+  .layer { position: absolute; display: flex; align-items: center; justify-content: center; color: #fff; text-transform: uppercase; }
+
+  /* top tab */
+  .tab { left: 29%; width: 40%; top: 0; height: 28%;
+    clip-path: polygon(8% 0, 92% 0, 100% 100%, 0 100%);
+    background: linear-gradient(#2a2f3a, #14171e); }
+  .tab span { font-size: calc(var(--u) * 5); font-weight: 700; letter-spacing: .02em; text-shadow: 0 0 .4em rgba(255,255,255,.35); margin-top: 6%; }
+
+  /* left red */
+  .red { left: 0; width: 52%; top: 32%; height: 52%;
+    clip-path: polygon(0 0, 88% 0, 100% 100%, 8% 100%);
+    background: linear-gradient(90deg, #6e1219, #b02530 85%, #8f1c26); }
+  .red span { font-size: calc(var(--u) * 8.5); font-weight: 700; margin-right: 28%; }
+
+  /* right blue */
+  .blue { right: 0; width: 52%; top: 32%; height: 52%;
+    clip-path: polygon(12% 0, 100% 0, 92% 100%, 0 100%);
+    background: linear-gradient(90deg, #0b1d64, #1b3fc2 20%, #1636a8); }
+  .blue span { font-size: calc(var(--u) * 8.5); font-weight: 700; margin-left: 28%; }
+
+  /* centre hex */
+  .mid { left: 24%; width: 52%; top: 22%; height: 66%;
+    clip-path: polygon(6% 0, 94% 0, 100% 50%, 94% 100%, 6% 100%, 0 50%);
+    background: linear-gradient(#3a404c, #1b1f27 55%, #12151b); gap: calc(var(--u) * 2.2); }
+  .mid .num { font-size: calc(var(--u) * 13); font-weight: 700; line-height: 1; min-width: 2ch; text-align: center; font-variant-numeric: tabular-nums;
+    text-shadow: 0 .06em .12em rgba(0,0,0,.5); }
+  .mid .slash { width: calc(var(--u) * .7); height: 62%; background: #fff; transform: skewX(-14deg); border-radius: 2px; }
+
+  .bump { animation: bump .35s ease; }
+  @keyframes bump { 0% { transform: scale(1); } 40% { transform: scale(1.18); } 100% { transform: scale(1); } }
+</style>
+</head>
+<body>
+<div id="board">
+  <div class="wrap">
+    <div class="layer red"><span id="wl">WIN</span></div>
+    <div class="layer blue"><span id="ll">LOSE</span></div>
+    <div class="layer tab"><span id="title">SCORE</span></div>
+    <div class="layer mid">
+      <div class="num" id="w">0</div>
+      <div class="slash"></div>
+      <div class="num" id="l">0</div>
+    </div>
+  </div>
+</div>
+<script>
+  const token = location.pathname.split('/').pop();
+  const el = (id) => document.getElementById(id);
+  let last = { win: null, lose: null };
+
+  function bump(node) { node.classList.remove('bump'); void node.offsetWidth; node.classList.add('bump'); }
+
+  function render(s) {
+    el('wl').textContent = s.winLabel;
+    el('ll').textContent = s.loseLabel;
+    el('title').textContent = s.title;
+    el('w').textContent = s.win;
+    el('l').textContent = s.lose;
+    if (last.win !== null && last.win !== s.win) bump(el('w'));
+    if (last.lose !== null && last.lose !== s.lose) bump(el('l'));
+    last = { win: s.win, lose: s.lose };
+  }
+
+  function connect() {
+    const es = new EventSource('/api/events/' + token);
+    es.onmessage = (e) => render(JSON.parse(e.data));
+    es.onerror = () => { es.close(); setTimeout(connect, 2000); };
+  }
+  // initial paint + live updates + safety polling in case the stream is interrupted
+  fetch('/api/state/' + token).then(r => r.json()).then(render).catch(() => {});
+  connect();
+  setInterval(() => fetch('/api/state/' + token).then(r => r.json()).then(render).catch(() => {}), 5000);
+</script>
+</body>
+</html>

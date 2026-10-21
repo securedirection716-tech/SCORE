@@ -1,0 +1,137 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1">
+<title>Scoreboard Controller</title>
+<style>
+  :root { --bg:#0f1218; --card:#181d27; --line:#2a3140; --txt:#e8ecf3; --mut:#9aa4b5; --red:#b02530; --blue:#1d44cc; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body { margin:0; background:var(--bg); color:var(--txt); font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; padding:16px; max-width:900px; margin-inline:auto; }
+  h1 { font-size:18px; margin:0 0 4px; }
+  .sub { color:var(--mut); font-size:13px; margin-bottom:14px; }
+  .link { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; margin-bottom:16px; }
+  .link label { font-size:12px; color:var(--mut); display:block; margin-bottom:6px; }
+  .row { display:flex; gap:8px; }
+  .row input { flex:1; min-width:0; background:#0f1218; color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:10px; font-size:13px; }
+  button { font:inherit; cursor:pointer; border:0; border-radius:10px; color:#fff; font-weight:600; }
+  .copy { background:#2f6bff; padding:0 16px; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  @media (max-width:560px){ .grid{ grid-template-columns:1fr; } }
+  .panel { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:14px; }
+  .panel.win { border-top:4px solid var(--red); }
+  .panel.lose { border-top:4px solid var(--blue); }
+  .name { display:flex; justify-content:space-between; align-items:center; font-size:14px; color:var(--mut); }
+  .big { font-size:64px; font-weight:800; text-align:center; margin:6px 0 12px; font-variant-numeric:tabular-nums; }
+  .btns { display:grid; grid-template-columns:repeat(4,1fr); gap:8px; margin-bottom:8px; }
+  .btns button { padding:14px 0; font-size:16px; }
+  .plus button { background:#1f8f4d; }
+  .minus button { background:#b4373d; }
+  .btns button:active { transform:scale(.96); filter:brightness(1.15); }
+  .reset-side { width:100%; padding:10px; background:#3a4254; font-size:13px; }
+  .reset-all { width:100%; padding:16px; margin-top:14px; background:#6b2fd1; font-size:16px; }
+  .labels { margin-top:16px; background:var(--card); border:1px solid var(--line); border-radius:12px; padding:12px; }
+  .labels .row { margin-top:8px; }
+  .labels input { text-transform:uppercase; }
+  .save { background:#3a4254; padding:0 16px; }
+  .status { font-size:12px; color:var(--mut); margin-top:10px; text-align:center; }
+</style>
+</head>
+<body>
+  <h1>Scoreboard Controller <span id="who" style="color:var(--mut)"></span></h1>
+  <div class="sub">Keep this page private. Changes appear on your stream instantly.</div>
+
+  <div class="link">
+    <label>Overlay link for TikTok LIVE Studio</label>
+    <div class="row">
+      <input id="olink" readonly>
+      <button class="copy" id="copy">Copy</button>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="panel win">
+      <div class="name"><span id="wname">WIN</span></div>
+      <div class="big" id="w">0</div>
+      <div class="btns plus">
+        <button data-s="win" data-a="1">+1</button><button data-s="win" data-a="10">+10</button>
+        <button data-s="win" data-a="100">+100</button><button data-s="win" data-a="1000">+1000</button>
+      </div>
+      <div class="btns minus">
+        <button data-s="win" data-a="-1">-1</button><button data-s="win" data-a="-10">-10</button>
+        <button data-s="win" data-a="-100">-100</button><button data-s="win" data-a="-1000">-1000</button>
+      </div>
+      <button class="reset-side" data-reset="win">Reset this side to 0</button>
+    </div>
+
+    <div class="panel lose">
+      <div class="name"><span id="lname">LOSE</span></div>
+      <div class="big" id="l">0</div>
+      <div class="btns plus">
+        <button data-s="lose" data-a="1">+1</button><button data-s="lose" data-a="10">+10</button>
+        <button data-s="lose" data-a="100">+100</button><button data-s="lose" data-a="1000">+1000</button>
+      </div>
+      <div class="btns minus">
+        <button data-s="lose" data-a="-1">-1</button><button data-s="lose" data-a="-10">-10</button>
+        <button data-s="lose" data-a="-100">-100</button><button data-s="lose" data-a="-1000">-1000</button>
+      </div>
+      <button class="reset-side" data-reset="lose">Reset this side to 0</button>
+    </div>
+  </div>
+
+  <button class="reset-all" id="resetAll">Reset both scores to 0</button>
+
+  <div class="labels">
+    <div style="font-size:13px;color:var(--mut)">Custom names (optional, max 12 characters)</div>
+    <div class="row">
+      <input id="inWin" placeholder="Left name" maxlength="12">
+      <input id="inTitle" placeholder="Top title" maxlength="12">
+      <input id="inLose" placeholder="Right name" maxlength="12">
+      <button class="save" id="saveLabels">Save</button>
+    </div>
+  </div>
+  <div class="status" id="status">Connecting...</div>
+
+<script>
+  const token = location.pathname.split('/').pop();
+  const $ = (id) => document.getElementById(id);
+  let filled = false;
+
+  function render(s) {
+    $('w').textContent = s.win; $('l').textContent = s.lose;
+    $('wname').textContent = s.winLabel; $('lname').textContent = s.loseLabel;
+    if (!filled) { $('inWin').value = s.winLabel; $('inLose').value = s.loseLabel; $('inTitle').value = s.title; filled = true; }
+  }
+
+  async function act(body) {
+    try {
+      const r = await fetch('/api/action/' + token, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+      if (!r.ok) throw new Error();
+      render(await r.json());
+      $('status').textContent = 'Live';
+    } catch (e) { $('status').textContent = 'Connection problem, try again'; }
+  }
+
+  document.querySelectorAll('button[data-a]').forEach(b => b.onclick = () =>
+    act({ action:'add', side:b.dataset.s, amount:Number(b.dataset.a) }));
+  document.querySelectorAll('button[data-reset]').forEach(b => b.onclick = () =>
+    act({ action:'reset', side:b.dataset.reset }));
+  $('resetAll').onclick = () => { if (confirm('Reset both scores to 0?')) act({ action:'reset' }); };
+  $('saveLabels').onclick = () => act({ action:'labels', winLabel:$('inWin').value, loseLabel:$('inLose').value, title:$('inTitle').value });
+  $('copy').onclick = async () => {
+    try { await navigator.clipboard.writeText($('olink').value); } catch (e) { $('olink').select(); document.execCommand('copy'); }
+    $('copy').textContent = 'Copied'; setTimeout(() => $('copy').textContent = 'Copy', 1500);
+  };
+
+  fetch('/api/state/' + token).then(r => r.json()).then(s => {
+    $('olink').value = s.overlayUrl; $('who').textContent = '#' + s.userId; render(s); $('status').textContent = 'Live';
+  });
+  function connect() {
+    const es = new EventSource('/api/events/' + token);
+    es.onmessage = (e) => render(JSON.parse(e.data));
+    es.onerror = () => { es.close(); setTimeout(connect, 2000); };
+  }
+  connect();
+</script>
+</body>
+</html>
