@@ -31,12 +31,61 @@ db.users.forEach((u) => {
 const token = (kind, id) =>
   crypto.createHmac('sha256', db.secret).update(kind + ':' + id).digest('hex').slice(0, 16);
 
+// ---- Persistent storage (Upstash Redis REST, free) ----
+const R_URL = (process.env.UPSTASH_REDIS_REST_URL || '').replace(/\/$/, '');
+const R_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
+const REMOTE = !!(R_URL && R_TOKEN && typeof fetch === 'function');
+let remoteReady = false;
+
+async function redis(cmd) {
+  const r = await fetch(R_URL, {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + R_TOKEN, 'Content-Type': 'application/json' },
+    body: JSON.stringify(cmd),
+  });
+  if (!r.ok) throw new Error('redis http ' + r.status);
+  return (await r.json()).result;
+}
+
+async function loadRemote() {
+  if (!REMOTE) { console.log('Storage: local file only (scores may reset on free hosting). Set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN to keep scores.'); return; }
+  try {
+    const raw = await redis(['GET', 'scoreboard']);
+    if (raw) {
+      const r = JSON.parse(raw);
+      if (!process.env.SECRET && r.secret) db.secret = r.secret;
+      if (!process.env.ADMIN_KEY && r.admin) db.admin = r.admin;
+      (r.users || []).forEach((ru) => {
+        const u = db.users.find((x) => x.id === ru.id);
+        if (u) { u.win = ru.win | 0; u.lose = ru.lose | 0; u.winLabel = ru.winLabel || 'WIN'; u.loseLabel = ru.loseLabel || 'LOSE'; u.title = ru.title || 'SCORE'; }
+      });
+      console.log('Storage: scores loaded from Upstash');
+    } else {
+      console.log('Storage: Upstash connected (empty, starting fresh)');
+    }
+    remoteReady = true;
+    saveRemote();
+  } catch (e) {
+    console.error('Storage: Upstash load FAILED, scores will not be saved remotely:', e.message);
+  }
+}
+
+let remoteTimer = null;
+function saveRemote() {
+  if (!remoteReady) return;
+  clearTimeout(remoteTimer);
+  remoteTimer = setTimeout(() => {
+    redis(['SET', 'scoreboard', JSON.stringify(db)]).catch((e) => console.error('remote save failed', e.message));
+  }, 150);
+}
+
 let saveTimer = null;
 function save() {
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => {
     try { fs.writeFileSync(DATA_FILE, JSON.stringify(db, null, 2)); } catch (e) { console.error('save failed', e.message); }
   }, 300);
+  saveRemote();
 }
 save();
 
@@ -197,7 +246,7 @@ const server = http.createServer(async (req, res) => {
   res.writeHead(404); res.end('Not found');
 });
 
-server.listen(PORT, () => {
+loadRemote().then(() => server.listen(PORT, () => {
   console.log(`\nScoreboard running on port ${PORT}`);
   console.log(`Admin page (all links):  /admin?key=${db.admin}\n`);
   const base = process.env.PUBLIC_URL || `http://localhost:${PORT}`;
@@ -205,4 +254,4 @@ server.listen(PORT, () => {
     console.log(`${u.name}\n  Controller: ${base}/c/${token('control', u.id)}\n  Overlay:    ${base}/o/${token('overlay', u.id)}`);
   });
   console.log('');
-});
+}));
